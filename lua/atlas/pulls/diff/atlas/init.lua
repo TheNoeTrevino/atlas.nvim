@@ -339,8 +339,18 @@ local function navigate_hunk(session, direction)
 end
 
 ---@param session AtlasDiffSession
+local function release_worktree(session)
+	local worktree = session.worktree
+	session.worktree = nil
+	if worktree then
+		pcall(worktree.release)
+	end
+end
+
+---@param session AtlasDiffSession
 local function register_keymaps(session)
-	keymaps.register(session, {
+	---@type AtlasNativeDiffKeymapActions
+	local actions = {
 		close = function()
 			session.close("user_close")
 		end,
@@ -406,7 +416,10 @@ local function register_keymaps(session)
 				comments.add_to_file(session, { path = file.path, old_path = file.old_path }, pending)
 			end
 		end,
-	})
+	}
+	local state = session.viewer_state --[[@as AtlasNativeDiffState]]
+	state.keymap_actions = actions
+	keymaps.register(session, actions)
 end
 
 ---@param session AtlasDiffSession
@@ -580,7 +593,22 @@ function M.detach(session, reason)
 		pcall(vim.cmd, vim.api.nvim_tabpage_get_number(session.tabpage) .. "tabclose")
 	end
 	view.delete_buffers(session)
+	-- Buffers first: they point into the worktree we are about to remove. A reload resolves the head
+	-- again and claims its own worktree, so it releases here too.
+	release_worktree(session)
 	events.emit("AtlasDiffClosed", event_data(session, reason or "viewer_closed"))
 end
+
+-- Worktrees are cheap to recreate but should not pile up in the cache directory. Anything that
+-- still slips through (a crash, a kill) is cleaned up by worktree.prune on the next open.
+vim.api.nvim_create_autocmd("VimLeavePre", {
+	group = vim.api.nvim_create_augroup("AtlasDiffWorktreeShutdown", { clear = true }),
+	callback = function()
+		for _, session in pairs(session_api.all()) do
+			session.worktree = nil
+		end
+		pcall(require("atlas.core.git.worktree").shutdown)
+	end,
+})
 
 return M
