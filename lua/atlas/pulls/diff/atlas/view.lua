@@ -272,6 +272,19 @@ local function focus_first_hunk(session)
 	end
 end
 
+-- Everything inside a worktree is a throwaway checkout, including files reached by jumping out of
+-- the diff. Keep them read only so edits cannot be lost with the directory, and unlisted so a
+-- review does not add a second entry per file to the buffer list.
+---@param buf integer
+function M.mark_worktree_buffer(buf)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return
+	end
+	vim.bo[buf].buflisted = false
+	vim.bo[buf].modifiable = false
+	vim.bo[buf].readonly = true
+end
+
 -- Head side buffers
 --
 -- Neovim only attaches language servers to buffers whose buftype is empty, so the new side has to
@@ -315,9 +328,7 @@ local function resolve_right_buffer(session, document)
 
 	state.right.owned_bufs[buf] = true
 	vim.bo[buf].bufhidden = "hide"
-	vim.bo[buf].buflisted = true
-	vim.bo[buf].modifiable = false
-	vim.bo[buf].readonly = true
+	M.mark_worktree_buffer(buf)
 	return buf
 end
 
@@ -641,9 +652,19 @@ function M.delete_buffers(session)
 		state.right.buf,
 		state.right.virtual_buf,
 	}
-	-- Worktree buffers point into a directory that is about to be removed.
+	-- Every buffer under the worktree points into a directory that is about to be removed, including
+	-- files the user reached by jumping out of the diff. Leaving them behind dangles them.
 	for buf in pairs(state.right.owned_bufs or {}) do
 		buffers[#buffers + 1] = buf
+	end
+	local root = session.worktree and session.worktree.root or nil
+	if root then
+		local prefix = tostring(root):gsub("/+$", "") .. "/"
+		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_get_name(buf):sub(1, #prefix) == prefix then
+				buffers[#buffers + 1] = buf
+			end
+		end
 	end
 	for _, buf in ipairs(buffers) do
 		if buf and vim.api.nvim_buf_is_valid(buf) then
