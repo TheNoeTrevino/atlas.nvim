@@ -2,12 +2,13 @@ local M = {}
 
 local cli = require("atlas.providers.github.client")
 local json = require("atlas.core.json")
+local diff_parser = require("atlas.core.git.diff_parser")
 local mapper = require("atlas.pulls.providers.github.api.mapper")
 local github_mapping = require("atlas.providers.github.mapping")
 local request_scope = require("atlas.core.requests")
 
 local REVIEW_QUERY = [[
-query($owner:String!,$name:String!,$number:Int!,$endCursor:String){
+query($owner:String!,$name:String!,$number:Int!,$endCursor:String,$includeHunks:Boolean!){
   repository(owner:$owner,name:$name){
     pullRequest(number:$number){
       id
@@ -34,6 +35,7 @@ query($owner:String!,$name:String!,$number:Int!,$endCursor:String){
               id
               databaseId
               body
+              diffHunk @include(if:$includeHunks)
               url
               createdAt
               author{login ... on User{databaseId} ... on Bot{databaseId}}
@@ -759,10 +761,10 @@ function M.fetch_reviewers(pr, opts, on_done)
 end
 
 ---@param pr PullRequest
----@param _opts { force_refresh: boolean|nil }|nil
+---@param include_hunks boolean
 ---@param on_done fun(result: { review: PullsReview, comments: PullsComment[] }|nil, err: string|nil)
 ---@return { cancel: fun() }|nil
-local function fetch_comments(pr, _opts, on_done)
+local function fetch_comments(pr, include_hunks, on_done)
 	---@cast pr GitHubPullRequest
 	local owner, name = pr.workspace, pr.repo
 	if owner == "" or name == "" then
@@ -783,6 +785,8 @@ local function fetch_comments(pr, _opts, on_done)
 		"name=" .. name,
 		"-F",
 		"number=" .. tostring(pr.id),
+		"-F",
+		"includeHunks=" .. tostring(include_hunks),
 		"-f",
 		"query=" .. REVIEW_QUERY,
 	}, function(result, err)
@@ -818,7 +822,11 @@ local function fetch_comments(pr, _opts, on_done)
 			local nodes = thread.comments and thread.comments.nodes or {}
 			for index, node in ipairs(nodes) do
 				local root_id = index > 1 and nodes[1] and nodes[1].databaseId or nil
-				table.insert(comments, mapper.to_review_comment(node, thread, root_id))
+				local comment = mapper.to_review_comment(node, thread, root_id)
+				table.insert(comments, comment)
+				if include_hunks then
+					comment.hunk = diff_parser.parse_hunk(json.safe_str(node.diffHunk) or "")
+				end
 			end
 		end
 		table.sort(comments, function(a, b)
@@ -881,13 +889,14 @@ end
 
 ---@param pr PullRequest
 ---@param opts { force_refresh: boolean|nil }|nil
+---@param include_hunks boolean
 ---@param on_done fun(data: PullsReviewData|nil, err: string|nil)
 ---@return { cancel: fun() }
-function M.fetch(pr, opts, on_done)
+local function fetch_review(pr, opts, include_hunks, on_done)
 	local requests = request_scope.new()
 	requests.all({
 		comments = function(done)
-			return fetch_comments(pr, opts, done)
+			return fetch_comments(pr, include_hunks, done)
 		end,
 		tasks = function(done)
 			return fetch_tasks(pr, opts, done)
@@ -909,6 +918,22 @@ function M.fetch(pr, opts, on_done)
 		}, nil)
 	end)
 	return requests
+end
+
+---@param pr PullRequest
+---@param opts { force_refresh: boolean|nil }|nil
+---@param on_done fun(data: PullsReviewData|nil, err: string|nil)
+---@return { cancel: fun() }
+function M.fetch(pr, opts, on_done)
+	return fetch_review(pr, opts, false, on_done)
+end
+
+---@param pr PullRequest
+---@param opts { force_refresh: boolean|nil }|nil
+---@param on_done fun(data: PullsReviewData|nil, err: string|nil)
+---@return { cancel: fun() }
+function M.fetch_threads(pr, opts, on_done)
+	return fetch_review(pr, opts, true, on_done)
 end
 
 ---@param pr PullRequest
