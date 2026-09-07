@@ -140,6 +140,7 @@ pulls = {
     {
       id = "show_repo_status",
       label = "Show repository status",
+      icon = "",
       confirmation = true,
       ---@param pr PullRequest
       ---@param ctx AtlasPullsCustomActionContext
@@ -170,6 +171,7 @@ issues = {
     {
       id = "copy_branch_name",
       label = "Copy branch name",
+      icon = "",
       ---@param issue Issue
       ---@param ctx AtlasIssuesCustomActionContext
       ---@param done fun(ok: boolean|nil, message: string|nil)
@@ -764,6 +766,7 @@ keymaps = {
     change_assignee = "ga",
     change_reporter = "gr",
     edit_issue = "ge",
+    edit_search = "i",
     create_issue = "c",
     toggle_description_mode = "m",
   },
@@ -775,6 +778,7 @@ keymaps = {
     toggle_repo_issue_state = "t",
     edit_title = "T",
     edit_description = "D",
+    edit_search = "i",
     review = {
       focus_item = "gd",
       approve = "ga",
