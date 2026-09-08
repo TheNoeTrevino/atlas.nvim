@@ -54,7 +54,9 @@ local FILE_STATUSES = {
 
 ---@class AtlasCodeDiffLifecycle
 ---@field get_session fun(tabpage: integer): AtlasCodeDiffSession|nil
----@field get_explorer fun(tabpage: integer): AtlasCodeDiffExplorer|nil
+---@field get_explorer (fun(tabpage: integer): AtlasCodeDiffExplorer|nil)|nil
+---@field get_panel_view (fun(tabpage: integer): table|nil)|nil
+---@field get_panel_name (fun(tabpage: integer): string|nil)|nil
 ---@field close fun(tabpage: integer): boolean
 
 ---@class AtlasCodeDiffState
@@ -65,6 +67,23 @@ local FILE_STATUSES = {
 ---@field generation integer
 ---@field auto_open_panel boolean
 ---@field closed boolean
+
+---@param lifecycle AtlasCodeDiffLifecycle
+---@param tabpage integer
+---@return AtlasCodeDiffExplorer|nil
+local function get_explorer(lifecycle, tabpage)
+	-- CodeDiff v2.67.2 changed explorer and history access under the panel API.
+	if lifecycle.get_panel_view then
+		if lifecycle.get_panel_name and lifecycle.get_panel_name(tabpage) ~= "explorer" then
+			return nil
+		end
+		return lifecycle.get_panel_view(tabpage)
+	end
+	if lifecycle.get_explorer then
+		return lifecycle.get_explorer(tabpage)
+	end
+	return nil
+end
 
 ---@param value string|nil
 ---@return string
@@ -173,7 +192,7 @@ end
 local function find_review_file(session, path)
 	local state = session.viewer_state --[[@as AtlasCodeDiffState]]
 	path = relative_path(session.source.root, path)
-	local explorer = state.lifecycle.get_explorer(state.tabpage)
+	local explorer = get_explorer(state.lifecycle, state.tabpage)
 	if not explorer then
 		return nil
 	end
@@ -291,7 +310,7 @@ local function focus_item(session, item, focus_diff)
 		comment = comment,
 		focus_diff = focus_diff,
 	}
-	local explorer = state.lifecycle.get_explorer(state.tabpage)
+	local explorer = get_explorer(state.lifecycle, state.tabpage)
 	if explorer and explorer.on_file_select then
 		explorer.on_file_select(file, { no_jump = true })
 	else
@@ -318,6 +337,7 @@ end
 ---@param buffers integer[]
 local function register_review_buffers(session, buffers)
 	local state = session.viewer_state --[[@as AtlasCodeDiffState]]
+	local explorer = get_explorer(state.lifecycle, state.tabpage)
 	local valid, seen = {}, {}
 	for _, buf in ipairs(buffers) do
 		if buf and not seen[buf] and vim.api.nvim_buf_is_valid(buf) then
@@ -329,10 +349,10 @@ local function register_review_buffers(session, buffers)
 		buffers = valid,
 		reopen = session.reopen,
 		help_key = keymaps.resolve("pulls.external_help"),
-		file_buffers = { state.lifecycle.get_explorer(state.tabpage).bufnr },
+		file_buffers = explorer and explorer.bufnr and { explorer.bufnr } or {},
 		add_file_comment = function(pending)
-			local explorer = state.lifecycle.get_explorer(state.tabpage)
-			local node = explorer and explorer.tree and explorer.tree:get_node() or nil
+			local current_explorer = get_explorer(state.lifecycle, state.tabpage)
+			local node = current_explorer and current_explorer.tree and current_explorer.tree:get_node() or nil
 			local file = node and node.data or nil
 			if file and file.type ~= "group" and file.type ~= "directory" then
 				comments.add_to_file(session, {
@@ -363,7 +383,7 @@ local function sync(session)
 	if not codediff or not codediff.stored_diff_result then
 		return false
 	end
-	local explorer = state.lifecycle.get_explorer(state.tabpage)
+	local explorer = get_explorer(state.lifecycle, state.tabpage)
 	if not explorer then
 		return false
 	end
@@ -559,7 +579,7 @@ local function attach(session, lifecycle, tabpage)
 	register_events(session, state)
 
 	local codediff = lifecycle.get_session(tabpage)
-	local explorer = lifecycle.get_explorer(tabpage)
+	local explorer = get_explorer(lifecycle, tabpage)
 	for _, win in pairs({
 		codediff and codediff.original_win,
 		codediff and codediff.modified_win,

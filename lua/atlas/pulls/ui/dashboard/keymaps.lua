@@ -197,12 +197,12 @@ function M.register(buf, views)
 		item("ui.toggle_star", {
 			desc = "Star or unstar PR",
 			callback = function()
-				local pr, repo = selected_pr()
-				if pr == nil or repo == nil then
+				local pr = selected_pr()
+				if pr == nil then
 					notify.warn("No PR selected")
 					return
 				end
-				require("atlas.pulls.ui.dashboard.controller").toggle_star(pr, repo)
+				require("atlas.pulls.ui.dashboard.controller").toggle_star(pr)
 			end,
 		})
 	)

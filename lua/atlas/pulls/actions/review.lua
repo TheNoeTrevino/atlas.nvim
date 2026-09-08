@@ -99,6 +99,7 @@ local function upsert_comment(context, comment)
 	local items = assert(context.items)
 	for index, existing in ipairs(items) do
 		if tostring(existing.id) == tostring(comment.id) then
+			comment.hunk = comment.hunk or existing.hunk
 			items[index] = comment
 			return
 		end
