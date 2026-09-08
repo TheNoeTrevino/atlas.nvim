@@ -979,6 +979,64 @@ mutation($pullRequestId:ID!,$commitOID:GitObjectID){
 ]]
 
 ---@param pr PullRequest
+---@param pull_request_id string
+---@param review PullsReview|nil
+---@param commit_oid string
+---@param on_done fun(review_id: string|nil, err: string|nil)
+---@return { cancel: fun() }|nil
+local function create_pending(pr, pull_request_id, review, commit_oid, on_done)
+	local args = {
+		"api",
+		"graphql",
+		"-f",
+		"pullRequestId=" .. pull_request_id,
+		"-f",
+		"query=" .. CREATE_PENDING_REVIEW_MUTATION,
+	}
+	if commit_oid ~= "" then
+		vim.list_extend(args, { "-f", "commitOID=" .. commit_oid })
+	end
+
+	return cli.gh(args, function(result, err)
+		if err or type(result) ~= "table" then
+			on_done(nil, err or "Failed to create pending review")
+			return
+		end
+		local data = json.safe_table(result.data)
+		local created = json.nilify(json.safe_table(data.addPullRequestReview).pullRequestReview)
+		if not created or tostring(created.id or "") == "" then
+			on_done(nil, "GitHub did not return the pending review")
+			return
+		end
+		M.update(review, created)
+		on_done(tostring(created.id), nil)
+	end, {
+		action = "Create pending review",
+		repo = pr.repo_full_name,
+		number = pr.id,
+	})
+end
+
+---@param pr PullRequest
+---@param review PullsReview|nil
+---@param commit_oid string
+---@param on_done fun(review_id: string|nil, err: string|nil)
+---@return { cancel: fun() }|nil
+function M.create_pending(pr, review, commit_oid, on_done)
+	---@cast pr GitHubPullRequest
+	if review and review.pending then
+		on_done(nil, "Submit the pending review first")
+		return nil
+	end
+	local pull_request_id = pr.node_id or ""
+	if pull_request_id == "" then
+		on_done(nil, "Missing pull request node id")
+		return nil
+	end
+	return create_pending(pr, pull_request_id, review, commit_oid, on_done)
+end
+
+---@param pr PullRequest
 ---@param review PullsReview|nil
 ---@param commit_oid string
 ---@param use_review fun(review_id: string): { cancel: fun() }|nil
@@ -998,53 +1056,25 @@ function M.with_pending(pr, review, commit_oid, use_review, on_error)
 		return use(review)
 	end
 
-	local function create_pending(pull_request_id)
-		local args = {
-			"api",
-			"graphql",
-			"-f",
-			"pullRequestId=" .. pull_request_id,
-			"-f",
-			"query=" .. CREATE_PENDING_REVIEW_MUTATION,
-		}
-		if commit_oid ~= "" then
-			vim.list_extend(args, { "-f", "commitOID=" .. commit_oid })
+	local requests = request_scope.new()
+	local cancelled = false
+	local current_handle
+	local function continue_with(value)
+		current_handle = use(value)
+		if cancelled and current_handle then
+			current_handle.cancel()
 		end
-
-		local cancelled = false
-		local current_handle
-		current_handle = cli.gh(args, function(result, err)
-			if cancelled then
+	end
+	local function create_review(pull_request_id)
+		requests.run(function(done)
+			return create_pending(pr, pull_request_id, review, commit_oid, done)
+		end, function(review_id, err)
+			if err then
+				on_error(err)
 				return
 			end
-			if err or type(result) ~= "table" then
-				on_error(err or "Failed to create pending review")
-				return
-			end
-			local data = result.data
-			local created = json.nilify(data.addPullRequestReview and data.addPullRequestReview.pullRequestReview)
-			if not created or tostring(created.id or "") == "" then
-				on_error("GitHub did not return the pending review")
-				return
-			end
-			M.update(review, created)
-			current_handle = use_review(tostring(created.id))
-			if cancelled and current_handle then
-				current_handle.cancel()
-			end
-		end, {
-			action = "Create pending review",
-			repo = pr.repo_full_name,
-			number = pr.id,
-		})
-		return {
-			cancel = function()
-				cancelled = true
-				if current_handle then
-					current_handle.cancel()
-				end
-			end,
-		}
+			continue_with({ id = review_id })
+		end)
 	end
 
 	local pull_request_id = pr.node_id or ""
@@ -1053,33 +1083,28 @@ function M.with_pending(pr, review, commit_oid, use_review, on_error)
 			on_error("Missing pull request node id")
 			return nil
 		end
-		return create_pending(pull_request_id)
+		create_review(pull_request_id)
+	else
+		requests.run(function(done)
+			return find_pending(pr, done)
+		end, function(found_pr_id, pending, err)
+			if err then
+				on_error(err)
+				return
+			end
+			local found = from_node(pending)
+			M.update(review, pending)
+			if found.pending and found.id then
+				continue_with(found)
+			else
+				create_review(tostring(found_pr_id))
+			end
+		end)
 	end
-
-	local cancelled = false
-	local current_handle
-	current_handle = find_pending(pr, function(found_pr_id, pending, err)
-		if cancelled then
-			return
-		end
-		if err then
-			on_error(err)
-			return
-		end
-		local found = from_node(pending)
-		M.update(review, pending)
-		if found.pending and found.id then
-			current_handle = use(found)
-		else
-			current_handle = create_pending(tostring(found_pr_id))
-		end
-		if cancelled and current_handle then
-			current_handle.cancel()
-		end
-	end)
 	return {
 		cancel = function()
 			cancelled = true
+			requests.cancel()
 			if current_handle then
 				current_handle.cancel()
 			end
