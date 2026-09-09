@@ -323,6 +323,17 @@ function M.get(tabpage)
 	return sessions[tabpage or vim.api.nvim_get_current_tabpage()]
 end
 
+-- Every attached session, in no particular order. Used by the worktree autocmds, which need to find
+-- the session that owns a buffer without knowing its tabpage.
+---@return AtlasDiffSession[]
+function M.all()
+	local result = {}
+	for _, session in pairs(sessions) do
+		table.insert(result, session)
+	end
+	return result
+end
+
 ---@param session AtlasDiffSession
 ---@param reason string|nil
 function M.detach(session, reason)
