@@ -192,7 +192,7 @@ function M.register_buffer(session, buf, actions)
 		)
 		add(
 			general,
-			item("ui.toggle_panel", {
+			item("pulls.review.explorer.toggle_explorer", {
 				desc = "Toggle file explorer",
 				index = 3,
 				callback = run(actions.toggle_explorer),
@@ -251,7 +251,7 @@ function M.register_buffer(session, buf, actions)
 			)
 			add(
 				general,
-				item("ui.show_details", {
+				item("pulls.review.show_details", {
 					desc = "Show commit details",
 					index = 9,
 					callback = run(actions.show_commit),
@@ -294,23 +294,9 @@ function M.register(session, actions)
 	local panel_actions = {}
 	add(
 		panel_actions,
-		item("ui.select", {
-			desc = "Show changed file",
+		item("pulls.review.open_item", {
+			desc = "Open changed file",
 			index = 1,
-			callback = run(function()
-				local index = explorer.open_at_cursor(session)
-				if index then
-					actions.select_file(index)
-				end
-			end),
-			opts = { silent = true, nowait = true },
-		})
-	)
-	add(
-		panel_actions,
-		item("pulls.review.focus_item", {
-			desc = "Focus changed file",
-			index = 2,
 			callback = run(function()
 				local index = explorer.open_at_cursor(session)
 				if index then
@@ -322,7 +308,7 @@ function M.register(session, actions)
 	)
 	add(
 		panel_actions,
-		item("ui.show_details", {
+		item("pulls.review.show_details", {
 			desc = "Show file path / item",
 			index = 3,
 			callback = run(function()

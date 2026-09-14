@@ -459,7 +459,6 @@ local function register_events(session)
 				if state.right.win then
 					view.configure_content_window(session, state.right.win)
 				end
-				view.render_document(session)
 				session:render()
 			end)
 		end,
