@@ -1,7 +1,7 @@
 local M = {}
 
 local commits = require("atlas.pulls.diff.atlas.commits")
-local comments = require("atlas.pulls.diff.ui.comments")
+local comments = require("atlas.pulls.diff.comments")
 local diff = require("atlas.ui.components.diff_hunks")
 local explorer = require("atlas.pulls.diff.atlas.explorer")
 local keymaps = require("atlas.pulls.diff.atlas.keymaps")
@@ -10,6 +10,7 @@ local notes = require("atlas.pulls.diff.notes")
 local renderer = require("atlas.pulls.diff.atlas.renderer")
 local review_panel = require("atlas.pulls.diff.ui.review_panel")
 local session_api = require("atlas.pulls.diff.session")
+local ui_comments = require("atlas.pulls.diff.ui.comments")
 
 ---@class AtlasNativeDiffOptions
 ---@field layout AtlasDiffLayout
@@ -343,7 +344,7 @@ local function detach_content_buffer(session, buf)
 	end
 	renderer.clear(buf)
 	notes.clear_buffer(buf)
-	comments.clear_buffer(buf)
+	ui_comments.clear_buffer(buf)
 	keymaps.unregister_buffer(buf)
 end
 
@@ -412,11 +413,11 @@ end
 ---@param output AtlasDiffRenderOutput
 function M.render(session, output)
 	local state = session.viewer_state
-	state.annotated_paths = output.annotated_paths
+	state.annotated_paths = comments.annotated_paths(session, state.files)
 	if state.layout == "inline" and state.right.win then
 		renderer.inline_deleted_lines(state.document, state.right.buf, output.deleted_lines, output.deleted_hints)
 	end
-	explorer.render(session, output.annotated_paths)
+	explorer.render(session, state.annotated_paths)
 	commits.render(session)
 end
 

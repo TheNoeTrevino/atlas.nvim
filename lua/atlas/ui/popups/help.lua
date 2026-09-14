@@ -11,14 +11,6 @@ local utils = require("atlas.ui.shared.utils")
 ---@field hidden? boolean
 ---@field index? number
 
----@class AtlasHelpCommandItem
----@field name string
----@field desc string
----@field callback? function|string
----@field opts? table
----@field hidden? boolean
----@field index? number
-
 ---@class AtlasHelpGroupOpts
 ---@field buffer integer
 ---@field index? number
@@ -43,7 +35,6 @@ local function ensure_state(bufnr)
 	if not state.buffers[bufnr] then
 		state.buffers[bufnr] = {
 			keys = {},
-			commands = {},
 			group_opts = {},
 			mapped = {},
 		}
@@ -147,42 +138,6 @@ function M.register(group, items, opts)
 	end
 end
 
----@param group string The name of the group
----@param items AtlasHelpCommandItem[]
----@param opts AtlasHelpGroupOpts
-function M.register_command(group, items, opts)
-	local bufnr = require_buffer(opts, "help.register_command")
-
-	local bstate = ensure_state(bufnr)
-	if not bstate.commands[group] then
-		bstate.commands[group] = {}
-		bstate.group_opts[group] = {}
-	end
-
-	if opts.index then
-		bstate.group_opts[group].index = opts.index
-	end
-
-	for _, item in ipairs(items) do
-		local cmd_opts = item.opts or {}
-		cmd_opts.desc = item.desc
-
-		if item.callback then
-			vim.api.nvim_buf_create_user_command(bufnr, item.name, item.callback, cmd_opts)
-		end
-
-		if not item.hidden then
-			remove_existing_entry(bstate.commands[group], "name", item.name)
-
-			table.insert(bstate.commands[group], {
-				name = item.name,
-				desc = item.desc,
-				index = item.index or DEFAULT_INDEX,
-			})
-		end
-	end
-end
-
 -- Drop every mapping and help entry Atlas registered on a buffer. Needed for buffers that outlive
 -- the view that mapped them, such as the worktree files behind a diff's head side.
 ---@param bufnr integer
@@ -194,11 +149,6 @@ function M.remove_buffer(bufnr)
 	if vim.api.nvim_buf_is_valid(bufnr) then
 		for _, mapping in ipairs(bstate.mapped or {}) do
 			pcall(vim.keymap.del, mapping.mode, mapping.key, { buffer = bufnr })
-		end
-		for _, commands in pairs(bstate.commands) do
-			for _, entry in ipairs(commands) do
-				pcall(vim.api.nvim_buf_del_user_command, bufnr, entry.name)
-			end
 		end
 	end
 	state.buffers[bufnr] = nil
@@ -228,9 +178,7 @@ function M.remove(group, items, opts)
 
 	if #bstate.keys[group] == 0 then
 		bstate.keys[group] = nil
-		if not bstate.commands[group] then
-			bstate.group_opts[group] = nil
-		end
+		bstate.group_opts[group] = nil
 	end
 end
 
@@ -242,13 +190,6 @@ local function group_index(bstate, group_name)
 	return (opts and opts.index) or DEFAULT_INDEX
 end
 
----@param group table
----@param item table
----@return string
-local function group_item_left(group, item)
-	return group.is_cmd and item.name or item.key
-end
-
 ---@param bstate table
 ---@return table[]
 local function collect_all_groups(bstate)
@@ -258,16 +199,6 @@ local function collect_all_groups(bstate)
 		table.insert(all_groups, {
 			name = group_name,
 			items = items,
-			is_cmd = false,
-			index = group_index(bstate, group_name),
-		})
-	end
-
-	for group_name, items in pairs(bstate.commands) do
-		table.insert(all_groups, {
-			name = group_name,
-			items = items,
-			is_cmd = true,
 			index = group_index(bstate, group_name),
 		})
 	end
@@ -291,7 +222,7 @@ local function collect_valid_groups(all_groups)
 		if #group.items > 0 then
 			table.sort(group.items, function(a, b)
 				if a.index == b.index then
-					return group_item_left(group, a) < group_item_left(group, b)
+					return a.key < b.key
 				end
 				return a.index < b.index
 			end)
@@ -312,7 +243,7 @@ local function build_render_items(valid_groups)
 		for item_index, item in ipairs(group.items) do
 			table.insert(render_items, {
 				type = "item",
-				left = group_item_left(group, item),
+				left = item.key,
 				right = item.desc,
 				group_index = i,
 				item_index = item_index,
