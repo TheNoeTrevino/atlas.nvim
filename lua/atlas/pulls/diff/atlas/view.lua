@@ -352,7 +352,7 @@ end
 ---@param buf integer
 local function attach_content_buffer(session, buf)
 	local state = session.viewer_state
-	if buf == state.right.virtual_buf or not vim.api.nvim_buf_is_valid(buf) then
+	if not vim.api.nvim_buf_is_valid(buf) then
 		return
 	end
 	local actions = state.keymap_actions

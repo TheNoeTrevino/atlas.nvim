@@ -384,7 +384,12 @@ function M.remove(repo_root, dir, on_done)
 		on_done(nil)
 		return nil
 	end
-	return core_git.run({ "-C", repo_root, "worktree", "remove", "--force", dir }, { text = true }, function(res)
+	local args = { "-C", repo_root, "worktree", "remove", "--force", dir }
+	-- Interrupted checkouts leave Git's "initializing" lock. Only force-unlock our cache worktrees.
+	if M.is_cache_path(dir) then
+		table.insert(args, #args, "--force")
+	end
+	return core_git.run(args, { text = true }, function(res)
 		if res.code == 0 then
 			on_done(nil)
 			return
@@ -423,8 +428,11 @@ function M.shutdown(timeout_ms)
 	local timeout = timeout_ms or 2000
 	for dir, info in pairs(claims) do
 		pcall(function()
-			vim.system({ "git", "-C", info.repo_root, "worktree", "remove", "--force", dir }, { text = true })
-				:wait(timeout)
+			local args = { "git", "-C", info.repo_root, "worktree", "remove", "--force", dir }
+			if M.is_cache_path(dir) then
+				table.insert(args, #args, "--force")
+			end
+			vim.system(args, { text = true }):wait(timeout)
 		end)
 		delete_owned(dir, "shutdown")
 	end

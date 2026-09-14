@@ -361,6 +361,36 @@ describe("worktree", function()
 			assert.same({ inside }, deleted)
 		end)
 
+		it("removes locked cache worktrees through git while preserving locked custom worktrees", function()
+			local inside = worktree.cache_root() .. "/repo/pr-1"
+			local outside = "/home/dev/reviews"
+			local removed = {}
+			core_git.run = function(args, _, on_done)
+				local code = 0
+				if args[4] == "remove" then
+					local force_count = 0
+					for _, arg in ipairs(args) do
+						if arg == "--force" then
+							force_count = force_count + 1
+						end
+					end
+					if force_count == 2 then
+						table.insert(removed, args[#args])
+					else
+						code = 128
+					end
+				end
+				on_done({ code = code, stderr = code ~= 0 and "worktree is locked" or "" })
+				return { cancel = function() end }
+			end
+
+			worktree.remove("/home/dev/code/atlas.nvim", inside)
+			worktree.remove("/home/dev/code/atlas.nvim", outside)
+
+			assert.same({ inside }, removed)
+			assert.same({}, deleted)
+		end)
+
 		it("ensure refuses an existing directory that is not a worktree of the repository", function()
 			local calls = fake_git({
 				["worktree list"] = {
