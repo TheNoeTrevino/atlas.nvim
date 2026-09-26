@@ -637,19 +637,19 @@ vim.api.nvim_create_autocmd("BufWinEnter", {
 		if not index or index == state.selected_index then
 			return
 		end
-		-- Deferred so the jump has positioned the cursor; that line is kept through the reload.
+		-- Deferred so the jump has positioned the cursor; that position is kept through the reload.
 		vim.schedule(function()
 			if state.closing or not vim.api.nvim_win_is_valid(win) then
 				return
 			end
-			local line = vim.api.nvim_win_get_cursor(win)[1]
+			local cursor = vim.api.nvim_win_get_cursor(win)
 			select_file(session, index, function()
 				local target = state.right.win
 				if not target or not vim.api.nvim_win_is_valid(target) then
 					return
 				end
 				local count = vim.api.nvim_buf_line_count(state.right.buf)
-				vim.api.nvim_win_set_cursor(target, { math.max(1, math.min(line, count)), 0 })
+				vim.api.nvim_win_set_cursor(target, { math.max(1, math.min(cursor[1], count)), cursor[2] })
 				pcall(vim.api.nvim_win_call, target, function()
 					vim.cmd("normal! zvzz")
 				end)

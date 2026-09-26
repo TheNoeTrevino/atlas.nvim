@@ -392,7 +392,7 @@ pulls = {
       -- Back the new side of the diff with a detached worktree at the PR head so it is made of
       -- real files and your language servers attach to it (AtlasDiff only). Off by default.
       enabled = false,
-      -- Where the worktree lives. Defaults to `stdpath("cache")/atlas/worktrees/<repo>-<sha>`.
+      -- Defaults to `stdpath("cache")/atlas/worktrees/<repo>/pr-<id>` (or `<repo>/<sha>` without a PR).
       -- May be an absolute path, or a function receiving
       -- { repo_root, repo_full_name, pr_id, head_sha, default } that returns a path or nil.
       dir = nil,

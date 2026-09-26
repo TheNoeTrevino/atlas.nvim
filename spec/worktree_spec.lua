@@ -64,9 +64,11 @@ describe("worktree", function()
 		end)
 
 		it("falls back to the repo root basename", function()
-			local dir = worktree.default_dir(context({ repo_full_name = nil }))
+			local ctx = context()
+			ctx.repo_full_name = nil
+			local dir = worktree.default_dir(ctx)
 
-			assert.is_truthy(dir:find("atlas-nvim/abcdef012345", 1, true))
+			assert.equals(worktree.cache_root() .. "/atlas-nvim/abcdef012345", dir)
 		end)
 
 		it("ignores trailing separators on the repo root", function()

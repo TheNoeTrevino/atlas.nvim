@@ -39,7 +39,7 @@ local function ensure_state(bufnr)
 			mapped = {},
 		}
 
-		vim.api.nvim_create_autocmd("BufWipeout", {
+		state.buffers[bufnr].cleanup = vim.api.nvim_create_autocmd("BufWipeout", {
 			buffer = bufnr,
 			callback = function()
 				state.buffers[bufnr] = nil
@@ -120,7 +120,10 @@ function M.register(group, items, opts)
 		if item.callback then
 			for _, k in ipairs(keys) do
 				vim.keymap.set(mode, k, item.callback, key_opts)
-				table.insert(bstate.mapped, { mode = mode, key = k })
+				for _, map_mode in ipairs(normalize_keys(mode)) do
+					bstate.mapped[map_mode] = bstate.mapped[map_mode] or {}
+					bstate.mapped[map_mode][k] = true
+				end
 			end
 		end
 
@@ -146,9 +149,12 @@ function M.remove_buffer(bufnr)
 	if not bstate then
 		return
 	end
+	pcall(vim.api.nvim_del_autocmd, bstate.cleanup)
 	if vim.api.nvim_buf_is_valid(bufnr) then
-		for _, mapping in ipairs(bstate.mapped or {}) do
-			pcall(vim.keymap.del, mapping.mode, mapping.key, { buffer = bufnr })
+		for mode, keys in pairs(bstate.mapped) do
+			for key in pairs(keys) do
+				pcall(vim.keymap.del, mode, key, { buffer = bufnr })
+			end
 		end
 	end
 	state.buffers[bufnr] = nil
@@ -168,8 +174,13 @@ function M.remove(group, items, opts)
 		local mode = item.mode or "n"
 		local keys = normalize_keys(item.key)
 
-		for _, key in ipairs(keys) do
-			pcall(vim.keymap.del, mode, key, { buffer = bufnr })
+		for _, map_mode in ipairs(normalize_keys(mode)) do
+			for _, key in ipairs(keys) do
+				pcall(vim.keymap.del, map_mode, key, { buffer = bufnr })
+				if bstate.mapped[map_mode] then
+					bstate.mapped[map_mode][key] = nil
+				end
+			end
 		end
 
 		local display_key = table.concat(keys, KEY_SEPARATOR)

@@ -60,8 +60,7 @@ end
 ---@param on_done fun(worktree: AtlasDiffWorktree|nil)
 ---@return { cancel: fun() }|nil
 local function prepare_worktree(session, view, on_done)
-	local lsp_cfg = (((config.options.pulls or {}).diff or {}).lsp or {})
-	-- if they dont have lsp enabled, just short it
+	local lsp_cfg = config.options.pulls.diff.lsp
 	if not lsp_cfg.enabled then
 		on_done(nil)
 		return nil
@@ -70,12 +69,6 @@ local function prepare_worktree(session, view, on_done)
 	local worktree = require("atlas.core.git.worktree")
 	local git_root = session.source.root
 	local head_sha = session.source.head_revision
-	-- No head revision means the new side already is the working tree: real files a language server
-	-- attaches to on its own, and nothing a detached worktree could check out.
-	if not head_sha then
-		on_done(nil)
-		return nil
-	end
 
 	local pr = session.review and session.review.pr or nil
 	---@type AtlasWorktreeContext
@@ -112,8 +105,7 @@ local function prepare_worktree(session, view, on_done)
 	}, function(created, err)
 		if not created then
 			logger.logwarn("diff.worktree unavailable", { dir = dir, error = tostring(err) })
-			released = true
-			worktree.discard(git_root, dir)
+			release()
 			on_done(nil)
 			return
 		end

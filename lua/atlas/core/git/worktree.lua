@@ -20,14 +20,6 @@ local function normalize_separators(path)
 	return (path:gsub("\\", "/"))
 end
 
--- Last path segment, ignoring trailing separators. Kept free of vim.fn so it stays unit-testable.
----@param path string
----@return string
-local function basename(path)
-	local normalized = normalize_separators(trim(path)):gsub("/+$", "") -- remove trailing slashes
-	return normalized:match("([^/]+)$") or normalized
-end
-
 ---@param value string
 ---@return string
 local function slugify(value)
@@ -92,13 +84,14 @@ end
 ---@field head_sha string
 ---@field default string|nil Only populated when handed to a user supplied `dir` function.
 
--- Default location: <cache>/atlas/worktrees/<repo-slug>-<sha>
+-- Default location: <cache>/atlas/worktrees/<repo>/pr-<id>, or <repo>/<sha> without a PR.
 ---@param ctx AtlasWorktreeContext
 ---@return string
 function M.default_dir(ctx)
 	local name = trim(ctx.repo_full_name)
 	if name == "" then
-		name = basename(ctx.repo_root)
+		local root = normalize_separators(trim(ctx.repo_root)):gsub("/+$", "")
+		name = vim.fs.basename(root)
 	end
 	-- These paths show up in pickers and statuslines, so prefer the pull request number over a
 	-- hash. A worktree whose head moved is rebuilt by ensure, so the number stays unambiguous.
@@ -362,10 +355,7 @@ local function apply_links(repo_root, dir, link)
 		local source = join(repo_root, relative)
 		local target = join(dir, relative)
 		if relative ~= "" and (directory_exists(source) or vim.uv.fs_stat(source)) and not vim.uv.fs_lstat(target) then
-			local parent = target:match("^(.*)/[^/]+$")
-			if parent and parent ~= "" then
-				vim.fn.mkdir(parent, "p")
-			end
+			vim.fn.mkdir(vim.fs.dirname(target), "p")
 			local ok, err = vim.uv.fs_symlink(source, target, { dir = true, junction = true })
 			if not ok then
 				logger.logwarn("worktree.link failed", { source = source, target = target, error = tostring(err) })
@@ -453,45 +443,26 @@ function M.prune(repo_root)
 	---@param dir string
 	local function remove_if_stale(dir)
 		if M.is_claimed(dir) then
-			return false
+			return
 		end
 		local stat = vim.uv.fs_stat(dir)
 		local mtime = stat and stat.mtime and stat.mtime.sec or now
 		if now - mtime <= STALE_SECONDS then
-			return false
+			return
 		end
 		logger.loginfo("worktree.prune removing stale worktree", { dir = dir })
 		vim.fn.delete(dir, "rf")
-		return true
-	end
-
-	---@param dir string
-	---@return string[]
-	local function child_directories(dir)
-		local scanner = vim.uv.fs_scandir(dir)
-		local children = {}
-		while scanner do
-			local name, kind = vim.uv.fs_scandir_next(scanner)
-			if not name then
-				break
-			end
-			if kind == "directory" then
-				table.insert(children, join(dir, name))
-			end
-		end
-		return children
 	end
 
 	-- Worktrees live one level below the repository directory, as <repo>/<pr or sha>.
-	for _, repo_dir in ipairs(child_directories(root)) do
-		local children = child_directories(repo_dir)
-		local removed = 0
-		for _, dir in ipairs(children) do
-			if remove_if_stale(dir) then
-				removed = removed + 1
+	for repo, kind in vim.fs.dir(root) do
+		if kind == "directory" then
+			local repo_dir = join(root, repo)
+			for name, child_kind in vim.fs.dir(repo_dir) do
+				if child_kind == "directory" then
+					remove_if_stale(join(repo_dir, name))
+				end
 			end
-		end
-		if #children == 0 or removed == #children then
 			vim.fn.delete(repo_dir, "d")
 		end
 	end
@@ -526,10 +497,7 @@ function M.ensure(opts, on_done)
 	end
 
 	local function create()
-		local parent = dir:match("^(.*)/[^/]+$")
-		if parent and parent ~= "" then
-			vim.fn.mkdir(parent, "p")
-		end
+		vim.fn.mkdir(vim.fs.dirname(dir), "p")
 		op.git({ "-C", repo_root, "worktree", "add", "--detach", dir, head_sha }, function(res)
 			if res.code ~= 0 then
 				op.finish(nil, command_error(res, "Failed to create worktree"))
