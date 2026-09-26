@@ -8,7 +8,8 @@ local detail_keymaps = require("atlas.pulls.ui.detail.keymaps")
 local icons = require("atlas.ui.shared.icons")
 local notify = require("atlas.core.notify")
 local request_scope = require("atlas.core.requests")
-local overview_icon, overview_icon_hl = icons.general("overview")
+local links = require("atlas.ui.links")
+local overview_icon = icons.general("overview")
 
 local SPINNER_INTERVAL_MS = 100
 
@@ -16,7 +17,7 @@ local DEFAULT_TABS = {
 	{
 		key = "overview",
 		label = "Overview",
-		icon = { icon = overview_icon, hl_group = overview_icon_hl },
+		icon = { icon = overview_icon },
 		mod = require("atlas.pulls.ui.detail.tabs.overview"),
 	},
 }
@@ -54,7 +55,10 @@ local function stop_spinner()
 end
 
 local function is_loading()
-	if state.pr_loading or state.details_loading or state.diffstat == "loading" or state.pipelines == "loading" then
+	if state.links and state.links.loading then
+		return true
+	end
+	if state.pr_loading or state.details_loading or state.diffstat == "loading" or state.merge_checks == "loading" then
 		return true
 	end
 	if state.current_pr == nil then
@@ -178,7 +182,7 @@ local function load_details(ref, force_refresh)
 	state.requests.run(function(done)
 		return core.fetch_pullrequest(ref, { force_refresh = force_refresh }, done)
 	end, function(details, err)
-		if not same_ref(state.current_pr or pending_ref, ref) then
+		if state.current_pr == nil and not same_ref(pending_ref, ref) then
 			return
 		end
 		state.current_details = details
@@ -203,6 +207,19 @@ local function load_pr(pr, force_refresh)
 	local core = provider.capabilities.core
 	load_active_tab(pr, { force_refresh = force_refresh })
 
+	if core.fetch_merge_checks then
+		state.merge_checks = "loading"
+		state.requests.run(function(done)
+			return core.fetch_merge_checks(pr, { force_refresh = force_refresh }, done)
+		end, function(checks, err)
+			if not same_ref(state.current_pr, pr) then
+				return
+			end
+			state.merge_checks = err or checks or {}
+			tab_refresh()
+		end)
+	end
+
 	if core.fetch_diffstat then
 		state.diffstat = "loading"
 		state.requests.run(function(done)
@@ -212,20 +229,6 @@ local function load_pr(pr, force_refresh)
 				return
 			end
 			state.diffstat = err and err or (entries or {})
-			tab_refresh()
-		end)
-	end
-
-	local pipelines = provider.capabilities.pipelines
-	if pipelines then
-		state.pipelines = "loading"
-		state.requests.run(function(done)
-			return pipelines.fetch(pr, { force_refresh = force_refresh }, done)
-		end, function(items, err)
-			if not same_ref(state.current_pr, pr) then
-				return
-			end
-			state.pipelines = err and err or (items or {})
 			tab_refresh()
 		end)
 	end
@@ -239,10 +242,11 @@ local function clear_pr()
 	state.current_pr = nil
 	state.current_details = nil
 	state.diffstat = nil
-	state.pipelines = nil
+	state.merge_checks = nil
 	state.pr_loading = false
 	state.details_loading = false
 	state.line_map = {}
+	links.reset(state)
 end
 
 ---@param pr PullRequest
@@ -251,6 +255,7 @@ local function show_pr(pr, force_refresh)
 	state.current_pr = pr
 	pending_ref = nil
 	state.pr_loading = false
+	links.load(state, pr, force_refresh, refresh_callback(pr))
 	load_pr(pr, force_refresh)
 	update_spinner()
 	render()

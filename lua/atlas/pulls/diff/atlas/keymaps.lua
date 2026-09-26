@@ -252,7 +252,7 @@ function M.register_buffer(session, buf, actions)
 			add(
 				general,
 				item("pulls.review.show_details", {
-					desc = "Show commit details",
+					desc = "Show full commit message (stays open while navigating)",
 					index = 9,
 					callback = run(actions.show_commit),
 					opts = { silent = true, nowait = true },

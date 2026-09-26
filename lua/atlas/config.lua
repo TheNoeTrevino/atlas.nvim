@@ -40,6 +40,7 @@
 ---@field ignore string[]|nil
 
 ---@class AtlasPullsDiffReviewPanelConfig
+---@field hidden boolean|nil
 ---@field height integer|nil
 
 ---@alias AtlasPullsDiffOpenCommand "AtlasDiff"|"DiffviewOpen"|"CodeDiff"
@@ -58,7 +59,6 @@
 ---@field layout "side-by-side"|"inline"|nil
 ---@field compact boolean|nil
 ---@field compact_context_lines integer|nil
----@field show_review_panel boolean|nil
 ---@field comment_display "virtual_lines"|"virtual_text"|nil
 ---@field explorer AtlasPullsDiffExplorerConfig|nil
 ---@field review_panel AtlasPullsDiffReviewPanelConfig|nil
@@ -174,9 +174,9 @@ M.options = {
 			layout = "inline",
 			compact = true,
 			compact_context_lines = 3,
-			show_review_panel = false,
 			comment_display = "virtual_lines",
 			review_panel = {
+				hidden = true,
 				height = 10,
 			},
 			lsp = {
@@ -232,6 +232,7 @@ M.options = {
 			previous_page = "[p",
 			open_actions = "A",
 			open_in_browser = "gx",
+			open_references = "gl",
 			copy_id = "y",
 			copy_url = "Y",
 			show_details = "K",

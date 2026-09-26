@@ -473,7 +473,7 @@ local function options(explorer_options)
 		layout = diff_config.layout == "inline" and "inline" or "side-by-side",
 		compact = diff_config.compact ~= false,
 		compact_context_lines = diff_config.compact_context_lines or 3,
-		show_review_panel = diff_config.show_review_panel == true,
+		show_review_panel = (diff_config.review_panel or {}).hidden == false,
 		explorer = explorer_options,
 	}
 end
@@ -567,6 +567,7 @@ function M.detach(session, reason)
 		return
 	end
 	state.closing = true
+	commits.close_pin()
 	cancel_job(session)
 	if state.group then
 		pcall(vim.api.nvim_del_augroup_by_id, state.group)

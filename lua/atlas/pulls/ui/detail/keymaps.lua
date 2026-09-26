@@ -6,6 +6,9 @@ local utils = require("atlas.ui.shared.utils")
 local state = require("atlas.pulls.ui.detail.state")
 local actions = require("atlas.pulls.actions")
 local notify = require("atlas.core.notify")
+local links = require("atlas.ui.links")
+
+local custom_registrations = {}
 
 ---@param pr PullRequest
 ---@param buf integer|nil
@@ -179,7 +182,7 @@ function M.register(buf)
 						local on_update = state.on_update
 						actions.open(context, function(result)
 							complete_action(pr, on_update, result)
-						end)
+						end, { links.action(state) })
 					end
 				end,
 			})
@@ -293,6 +296,7 @@ function M.register(buf)
 
 	M.remove(buf)
 	local general = items
+	vim.list_extend(general, links.keymaps(state))
 
 	utils.insert_if(
 		general,
@@ -355,12 +359,30 @@ function M.register(buf)
 		})
 	)
 
+	local custom_items = resolver.custom_items("pulls", function(callback)
+		local pr = state.current_pr
+		if not pr then
+			return
+		end
+		local context = action_context(pr, buf)
+		local on_update = state.on_update
+		if context then
+			return callback(context, function(result)
+				complete_action(pr, on_update, result)
+			end)
+		end
+	end)
+	vim.list_extend(general, custom_items)
+	custom_registrations[buf] = custom_items
 	help.register("General", general, { index = 300, buffer = buf })
 end
 
 ---@param buf integer
 function M.remove(buf)
+	help.remove("General", custom_registrations[buf] or {}, { buffer = buf })
+	custom_registrations[buf] = nil
 	local general = {}
+	vim.list_extend(general, links.keymaps(state))
 	utils.insert_if(general, remove_item("ui.next_item"))
 	utils.insert_if(general, remove_item("ui.previous_item"))
 	utils.insert_if(general, remove_item("ui.refresh"))
